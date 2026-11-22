@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multithreaded File Downloader</title>
+<style>
+:root {
+  --ink: #2a2140; --muted: #756b8c; --line: #e6e0f0; --surface: #ffffff;
+  --accent: #7c3aed; --accent2: #db2777; --soft: #f6f2fc; --soft2: #fdf2f8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; color: var(--ink);
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  background:
+    linear-gradient(rgba(124,58,237,.05) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, rgba(124,58,237,.05) 1px, transparent 1px) 0 0 / 40px 40px,
+    radial-gradient(900px 400px at 100% 0%, rgba(219,39,119,.10), transparent 70%),
+    radial-gradient(900px 400px at 0% 0%, rgba(124,58,237,.12), transparent 70%),
+    #faf8fd;
+  background-attachment: fixed;
+}
+.topbar {
+  background: linear-gradient(90deg, #4c1d95, #7c3aed 55%, #be185d);
+  color: #fff; padding: 34px 16px 56px;
+}
+.topbar .inner { max-width: 760px; margin: 0 auto; }
+.eyebrow { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; opacity: .8; font-weight: 600; }
+h1 { margin: 8px 0 6px; font-size: 32px; font-weight: 700; letter-spacing: -.3px; }
+.sub { margin: 0; opacity: .85; font-size: 15px; }
+
+.app { max-width: 760px; margin: -32px auto 0; padding: 0 16px 60px; }
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  padding: 24px; margin-bottom: 18px; box-shadow: 0 8px 24px rgba(60,30,110,.08);
+}
+.section-title {
+  margin: 0 0 18px; padding-bottom: 12px; font-size: 13px; font-weight: 700;
+  letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);
+  border-bottom: 1px solid var(--line);
+}
+label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+input[type=text], input[type=number] {
+  width: 100%; padding: 11px 13px; font-size: 15px; color: var(--ink);
+  background: #fff; border: 1px solid #d6cde6; border-radius: 8px;
+}
+input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+input:disabled { background: var(--soft); opacity: .6; }
+.row { display: flex; gap: 14px; margin-top: 16px; align-items: flex-end; flex-wrap: wrap; }
+.row > div { flex: 1; min-width: 160px; }
+.check { display: flex; align-items: center; gap: 10px; margin: 18px 0 0; color: var(--ink); font-size: 14px; font-weight: 500; }
+.check input { width: 17px; height: 17px; accent-color: var(--accent); }
+
+button {
+  padding: 11px 26px; font-size: 15px; font-weight: 600; color: #fff; cursor: pointer;
+  background: linear-gradient(90deg, var(--accent), #a21caf); border: 0; border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(124,58,237,.3); transition: transform .12s, box-shadow .12s;
+}
+button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(124,58,237,.35); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.save { margin-top: 18px; background: #fff; color: var(--accent); border: 1px solid var(--accent); box-shadow: none; }
+.save:hover:not(:disabled) { background: var(--soft); box-shadow: none; }
+
+.bar-head { display: flex; justify-content: space-between; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.bar-head span:last-child { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.bar { height: 10px; background: var(--soft); border-radius: 99px; overflow: hidden; }
+.fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent2), #e879a9); border-radius: 99px; transition: width .15s; }
+.fill.green { background: linear-gradient(90deg, var(--accent), #a78bfa); }
+.gap { height: 22px; }
+.parts { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; margin-top: 20px; }
+.part { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: #fcfbfe; }
+.part small { color: var(--muted); font-size: 12px; font-weight: 600; }
+.part .bar { height: 6px; margin-top: 8px; }
+
+.results { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.stat { padding: 18px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--soft2); text-align: left; }
+.stat:nth-child(2) { background: var(--soft); }
+.stat b { display: block; font-size: 26px; font-weight: 700; color: var(--accent2); font-variant-numeric: tabular-nums; }
+.stat:nth-child(2) b { color: var(--accent); }
+.stat span { font-size: 12px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); }
+.stat.hi { background: linear-gradient(135deg, var(--accent), #be185d); border: 0; }
+.stat.hi b, .stat.hi span { color: #fff; }
+
+.msg { margin-top: 16px; font-size: 14px; font-weight: 500; }
+.msg.err { color: #9f1239; background: #fff1f2; border: 1px solid #fecdd3; padding: 10px 14px; border-radius: 8px; }
+.msg.ok { color: var(--accent); }
+.hidden { display: none; }
+@media (max-width: 560px) { h1 { font-size: 26px; } .results { grid-template-columns: 1fr; } }
+
+/* ---------- decorative layer ---------- */
+.bgshapes { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.bgshapes i { position: absolute; display: block; animation: drift 14s ease-in-out infinite alternate; }
+.b-blob1 { width: 420px; height: 420px; left: -140px; top: 38%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(124,58,237,.18), transparent 70%); }
+.b-blob2 { width: 460px; height: 460px; right: -160px; top: 55%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(219,39,119,.16), transparent 70%); animation-delay: -5s; }
+.b-ring1 { width: 120px; height: 120px; left: 6%; top: 62%; border-radius: 50%;
+  border: 3px solid rgba(124,58,237,.22); }
+.b-ring2 { width: 70px; height: 70px; right: 8%; top: 40%; border-radius: 50%;
+  border: 3px solid rgba(219,39,119,.25); animation-delay: -3s; }
+.b-sq1 { width: 64px; height: 64px; left: 12%; top: 85%; border-radius: 12px;
+  border: 3px solid rgba(219,39,119,.22); transform: rotate(18deg); animation-delay: -7s; }
+.b-sq2 { width: 40px; height: 40px; right: 14%; top: 78%; border-radius: 8px;
+  background: rgba(124,58,237,.14); transform: rotate(-15deg); animation-delay: -2s; }
+.b-tri { width: 70px; height: 70px; left: 4%; top: 45%;
+  background: rgba(219,39,119,.16); clip-path: polygon(50% 0, 100% 100%, 0 100%); animation-delay: -9s; }
+.b-tri2 { width: 54px; height: 54px; right: 5%; top: 90%;
+  background: rgba(124,58,237,.18); clip-path: polygon(50% 0, 100% 100%, 0 100%); transform: rotate(30deg); animation-delay: -4s; }
+.b-dots { width: 130px; height: 130px; right: 4%; top: 28%;
+  background: radial-gradient(rgba(124,58,237,.35) 2px, transparent 2.5px) 0 0 / 18px 18px; }
+.b-dots2 { width: 110px; height: 110px; left: 3%; top: 76%;
+  background: radial-gradient(rgba(219,39,119,.35) 2px, transparent 2.5px) 0 0 / 18px 18px; animation-delay: -6s; }
+@keyframes drift { from { transform: translateY(0) rotate(0deg); } to { transform: translateY(-22px) rotate(8deg); } }
+
+.topbar { position: relative; overflow: hidden; padding-bottom: 92px; z-index: 1; }
+.topbar .inner { position: relative; z-index: 2; }
+.hs { position: absolute; display: block; }
+.hs-c1 { width: 320px; height: 320px; right: -80px; top: -140px; border-radius: 50%; background: rgba(255,255,255,.10); }
+.hs-c2 { width: 200px; height: 200px; right: 120px; top: 30px; border-radius: 50%; border: 2px solid rgba(255,255,255,.28); }
+.hs-c3 { width: 90px; height: 90px; right: 36%; top: -30px; border-radius: 50%; background: rgba(255,255,255,.12); }
+.hs-c4 { width: 26px; height: 26px; right: 22%; top: 70px; border-radius: 50%; background: rgba(255,255,255,.55); }
+.hs-sq { width: 70px; height: 70px; right: 6%; top: 88px; border-radius: 14px; border: 2px solid rgba(255,255,255,.35); transform: rotate(20deg); }
+.hs-tri { width: 56px; height: 56px; right: 40%; bottom: 40px; background: rgba(255,255,255,.18); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.hs-dots { width: 150px; height: 90px; left: 48%; top: 22px;
+  background: radial-gradient(rgba(255,255,255,.55) 2px, transparent 2.5px) 0 0 / 16px 16px; }
+.hs-wave { position: absolute; left: 0; right: 0; bottom: -1px; width: 100%; height: 60px; display: block; }
+.app { position: relative; z-index: 1; }
+
+.card { position: relative; overflow: hidden; }
+.card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+  background: linear-gradient(180deg, var(--accent), var(--accent2)); }
+.card::after { content: ""; position: absolute; right: -40px; top: -40px; width: 130px; height: 130px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(124,58,237,.10), transparent 70%); pointer-events: none; }
+.section-title { display: flex; align-items: center; gap: 10px; }
+.section-title::before { content: ""; width: 10px; height: 10px; border-radius: 3px; transform: rotate(45deg);
+  background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.stat { position: relative; overflow: hidden; }
+.stat::after { content: ""; position: absolute; right: -18px; bottom: -18px; width: 70px; height: 70px; border-radius: 50%;
+  background: rgba(124,58,237,.10); }
+.stat.hi::after { background: rgba(255,255,255,.18); }
+.stat b, .stat span { position: relative; z-index: 1; }
+.part { position: relative; }
+.part::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--accent2)); }
+.part small, .part .bar { margin-left: 4px; display: block; }
+.part .bar { margin-left: 4px; }
+
+/* ---------- queue map + benchmark ---------- */
+select { width: 100%; padding: 11px 13px; font-size: 15px; color: var(--ink); background: #fff; border: 1px solid #d6cde6; border-radius: 8px; }
+select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+.note { margin: 0 0 4px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.fill.mix { background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+.map-title { margin-top: 22px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.qmap { display: grid; grid-template-columns: repeat(auto-fill, minmax(22px, 1fr)); gap: 4px; margin-top: 10px; }
+.qmap i { display: block; height: 22px; border-radius: 5px; background: var(--soft); border: 1px solid var(--line); transition: background .2s, opacity .2s; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.legend b { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.bchart { display: flex; gap: 14px; align-items: flex-end; margin-top: 22px; }
+.bcol { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.bwrap { height: 160px; width: 100%; display: flex; align-items: flex-end; }
+.bbar { width: 100%; border-radius: 8px 8px 0 0; background: linear-gradient(180deg, #a78bfa, var(--accent)); transition: height .3s; }
+.bcol.best .bbar { background: linear-gradient(180deg, #f472b6, var(--accent2)); }
+.bval { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.blab { font-size: 12px; font-weight: 600; color: var(--muted); }
+.bsp { font-size: 12px; font-weight: 700; color: var(--accent); }
+.bcol.best .bsp { color: var(--accent2); }
+</style>
+</head>
+<body>
+<div class="bgshapes" aria-hidden="true">
+  <i class="b-blob1"></i><i class="b-blob2"></i><i class="b-ring1"></i><i class="b-ring2"></i>
+  <i class="b-sq1"></i><i class="b-sq2"></i><i class="b-tri"></i><i class="b-tri2"></i>
+  <i class="b-dots"></i><i class="b-dots2"></i>
+</div>
+
+<header class="topbar">
+  <span class="hs hs-c1"></span><span class="hs hs-c2"></span><span class="hs hs-c3"></span>
+  <span class="hs hs-c4"></span><span class="hs hs-sq"></span><span class="hs hs-tri"></span>
+  <span class="hs hs-dots"></span>
+  <div class="inner">
+    <div class="eyebrow">Multithreading Project</div>
+    <h1>File Downloader</h1>
+    <p class="sub">Compare single-thread, fixed-split and dynamic-queue downloads.</p>
+  </div>
+  <svg class="hs-wave" viewBox="0 0 1440 60" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0,30 C240,70 480,0 720,28 C960,56 1200,10 1440,34 L1440,60 L0,60 Z" fill="#faf8fd" fill-opacity=".45"/>
+    <path d="M0,42 C260,10 520,60 780,36 C1040,12 1250,52 1440,30 L1440,60 L0,60 Z" fill="#faf8fd"/>
+  </svg>
+</header>
+
+<main class="app">
+  <section class="card">
+    <h2 class="section-title">Download settings</h2>
+    <label for="url">File URL</label>
+    <input type="text" id="url" placeholder="https://example.com/file.zip">
+    <div class="row">
+      <div>
+        <label for="threads">Threads (Web Workers)</label>
+        <input type="number" id="threads" min="1" max="16" value="4">
+      </div>
+      <button id="start">Start download</button>
+    </div>
+    <label class="check"><input type="checkbox" id="demo"> Use demo mode (simulated 8 MB file, no internet needed)</label>
+    <label class="check"><input type="checkbox" id="slow"> Demo only: make thread 1 slow (shows why the dynamic queue helps)</label>
+    <div class="msg err hidden" id="error"></div>
+  </section>
+
+  <section class="card hidden" id="progress">
+    <h2 class="section-title">Progress</h2>
+    <div class="bar-head"><span>Single thread</span><span id="s-text">waiting</span></div>
+    <div class="bar"><div class="fill" id="s-fill"></div></div>
+    <div class="gap"></div>
+    <div class="bar-head"><span id="m-title">Fixed split</span><span id="m-text">waiting</span></div>
+    <div class="bar"><div class="fill green" id="m-fill"></div></div>
+    <div class="parts" id="parts"></div>
+    <div class="gap"></div>
+    <div class="bar-head"><span id="q-title">Dynamic queue</span><span id="q-text">waiting</span></div>
+    <div class="bar"><div class="fill mix" id="q-fill"></div></div>
+    <div class="map-title">Chunk map: each square is a small piece of the file, colored by the thread that downloaded it.</div>
+    <div class="qmap" id="qmap"></div>
+    <div class="legend" id="qlegend"></div>
+  </section>
+
+  <section class="card hidden" id="results">
+    <h2 class="section-title">Results</h2>
+    <div class="results">
+      <div class="stat"><b id="r-single">-</b><span>Single thread</span></div>
+      <div class="stat"><b id="r-multi">-</b><span id="r-multi-l">Fixed split</span></div>
+      <div class="stat"><b id="r-queue">-</b><span>Dynamic queue</span></div>
+      <div class="stat hi"><b id="r-speed">-</b><span>Best speedup</span></div>
+    </div>
+    <div class="msg ok" id="r-msg"></div>
+    <button id="save" class="save">Save file</button>
+  </section>
+  <section class="card" id="bench">
+    <h2 class="section-title">Thread scaling benchmark</h2>
+    <p class="note">Tests 1, 2, 4, 8 and 16 threads automatically and charts the time, to find how many threads is best. Demo mode simulates a server with a total speed limit, so you will see diminishing returns. With a real URL, the file is downloaded 5 times.</p>
+    <div class="row">
+      <div>
+        <label for="bench-method">Method to test</label>
+        <select id="bench-method"><option value="fixed">Fixed split</option><option value="queue">Dynamic queue</option></select>
+      </div>
+      <button id="bench-run">Run benchmark</button>
+    </div>
+    <div id="bench-out" class="hidden">
+      <div class="bchart" id="bench-chart"></div>
+      <div class="msg ok" id="bench-msg"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+/* Multithreaded file downloader (browser only).
+   Each "thread" is a Web Worker that downloads one byte range with fetch(). */
+
+const DEMO_SIZE = 8 * 1024 * 1024;   // 8 MB simulated file
+const DEMO_TOTAL = 6 * 1024 * 1024;  // simulated server limit: 6 MB/s in total
+const DEMO_LATENCY = 60;             // simulated delay (ms) at the start of every request
+const DEMO_SPEED = 1024 * 1024;      // simulated 1 MB/s per connection
+
+/* ---------- Worker code (runs in its own thread) ---------- */
+function workerMain() {
+  self.onmessage = async (e) => {
+    const { id, url, start, end, useRange, demo, demoSpeed, demoLatency } = e.data;
+    try {
+      // Demo mode: simulate a server that limits speed per connection
+      if (demo) {
+        await new Promise((r) => setTimeout(r, demoLatency));
+        const total = end - start + 1;
+        const buf = new Uint8Array(total);
+        const step = 64 * 1024;
+        const delay = (step / demoSpeed) * 1000;
+        for (let off = 0; off < total; off += step) {
+          const n = Math.min(step, total - off);
+          for (let i = 0; i < n; i++) buf[off + i] = ((start + off + i) * 31) & 255;
+          await new Promise((r) => setTimeout(r, delay));
+          self.postMessage({ type: "progress", id, received: off + n });
+        }
+        self.postMessage({ type: "done", id, buffer: buf.buffer }, [buf.buffer]);
+        return;
+      }
+
+      // Real download
+      const headers = useRange ? { Range: `bytes=${start}-${end}` } : {};
+      const res = await fetch(url, { headers, cache: "no-store" });
+      if (useRange && res.status !== 206) {
+        throw new Error("Server ignored the Range request (status " + res.status + ").");
+      }
+      if (!res.ok) throw new Error("HTTP " + res.status);
+
+      const reader = res.body.getReader();
+      const chunks = [];
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        self.postMessage({ type: "progress", id, received });
+      }
+      const out = new Uint8Array(received);
+      let pos = 0;
+      for (const c of chunks) { out.set(c, pos); pos += c.length; }
+      if (useRange && received !== end - start + 1) throw new Error("Part size mismatch.");
+      self.postMessage({ type: "done", id, buffer: out.buffer }, [out.buffer]);
+    } catch (err) {
+      self.postMessage({ type: "error", id, message: err.message });
+    }
+  };
+}
+const workerURL = URL.createObjectURL(
+  new Blob([`(${workerMain.toString()})()`], { type: "text/javascript" })
+);
+
+/* ---------- Helpers ---------- */
+const $ = (id) => document.getElementById(id);
+const pct = (done, total) => (total ? Math.min(100, (done / total) * 100) : 0);
+const fmt = (s) => s.toFixed(2) + " s";
+let finalBlob = null, finalName = "download.bin";
+
+function showError(msg) {
+  $("error").textContent = msg || "";
+  $("error").classList.toggle("hidden", !msg);
+}
+
+/* Find file size and check that the server supports range requests */
+async function probe(url) {
+  let res;
+  try {
+    res = await fetch(url, { headers: { Range: "bytes=0-0" }, cache: "no-store" });
+  } catch {
+    throw new Error("Could not reach the file. The server must allow CORS (Access-Control-Allow-Origin).");
+  }
+  if (res.body) res.body.cancel();
+  if (res.status !== 206) throw new Error("This server does not support range requests (needed for multithreading).");
+  let size = 0;
+  const cr = res.headers.get("Content-Range");           // "bytes 0-0/12345"
+  if (cr && cr.includes("/")) size = parseInt(cr.split("/")[1], 10);
+  if (!size) {
+    const head = await fetch(url, { method: "HEAD" });
+    size = parseInt(head.headers.get("Content-Length") || "0", 10);
+  }
+  if (!size) throw new Error("Could not read the file size (server must expose Content-Range).");
+  return size;
+}
+
+/* Run one download phase with n workers. Returns {time, blob} */
+function runPhase({ url, size, n, useRange, demo, slowFirst, onProgress }) {
+  return new Promise((resolve, reject) => {
+    const part = Math.floor(size / n);
+    const received = new Array(n).fill(0);
+    const buffers = new Array(n);
+    const workers = [];
+    let finished = 0;
+    const t0 = performance.now();
+
+    for (let i = 0; i < n; i++) {
+      const start = i * part;
+      const end = i === n - 1 ? size - 1 : start + part - 1;
+      const w = new Worker(workerURL);
+      workers.push(w);
+      w.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === "progress") {
+          received[i] = m.received;
+          onProgress(received.slice());
+        } else if (m.type === "done") {
+          buffers[i] = m.buffer;
+          received[i] = end - start + 1;
+          onProgress(received.slice());
+          w.terminate();
+          if (++finished === n) {
+            // merge the parts, in order, into one Blob
+            const blob = new Blob(buffers);
+            resolve({ time: (performance.now() - t0) / 1000, blob });
+          }
+        } else if (m.type === "error") {
+          workers.forEach((x) => x.terminate());
+          reject(new Error(m.message));
+        }
+      };
+      w.postMessage({ id: i, url, start, end, useRange, demo,
+        demoSpeed: demoSpeedFor(n, slowFirst && i === 0), demoLatency: DEMO_LATENCY });
+    }
+  });
+}
+
+/* ---------- Demo speed: per-connection limit + shared server limit ---------- */
+function demoSpeedFor(n, slow) {
+  const s = Math.min(DEMO_SPEED, DEMO_TOTAL / n);
+  return slow ? s / 4 : s;
+}
+
+function setBusy(b) { $("start").disabled = b; $("bench-run").disabled = b; }
+
+/* ---------- Dynamic chunk queue ----------
+   The file is cut into many small chunks. Each worker takes the next free chunk
+   as soon as it finishes one, so fast threads automatically do more work. */
+function runQueue({ url, size, n, demo, slowFirst, onProgress }) {
+  return new Promise((resolve, reject) => {
+    const chunkSize = Math.max(256 * 1024, Math.ceil(size / 64));
+    const total = Math.ceil(size / chunkSize);
+    const buffers = new Array(total);
+    const got = new Array(total).fill(0);
+    const owner = new Array(total).fill(-1);
+    const done = new Array(total).fill(false);
+    const counts = new Array(n).fill(0);
+    const workers = [];
+    let next = 0, finished = 0;
+    const t0 = performance.now();
+    const report = () => onProgress({ got, owner, done, counts, total, size, n });
+
+    const give = (w, wi) => {
+      if (next >= total) return;
+      const id = next++;
+      const start = id * chunkSize;
+      const end = Math.min(size - 1, start + chunkSize - 1);
+      owner[id] = wi;
+      w.postMessage({ id, url, start, end, useRange: true, demo,
+        demoSpeed: demoSpeedFor(n, slowFirst && wi === 0), demoLatency: DEMO_LATENCY });
+    };
+
+    for (let wi = 0; wi < n; wi++) {
+      const w = new Worker(workerURL);
+      workers.push(w);
+      w.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === "progress") {
+          got[m.id] = m.received;
+          report();
+        } else if (m.type === "done") {
+          buffers[m.id] = m.buffer;
+          got[m.id] = m.buffer.byteLength;
+          done[m.id] = true;
+          counts[wi]++;
+          report();
+          if (++finished === total) {
+            workers.forEach((x) => x.terminate());
+            resolve({ time: (performance.now() - t0) / 1000, blob: new Blob(buffers) });
+          } else {
+            give(w, wi);
+          }
+        } else if (m.type === "error") {
+          workers.forEach((x) => x.terminate());
+          reject(new Error(m.message));
+        }
+      };
+      give(w, wi);
+    }
+  });
+}
+
+/* Chunk map: one square per chunk, colored by the thread that downloaded it */
+const workerColor = (i, n) => `hsl(${(i * 360) / n}, 65%, 52%)`;
+
+function showQueue(q) {
+  const p = pct(q.got.reduce((a, b) => a + b, 0), q.size);
+  $("q-fill").style.width = p + "%";
+  $("q-text").textContent = p.toFixed(0) + "%";
+  const map = $("qmap");
+  if (map.children.length !== q.total) {
+    map.innerHTML = Array.from({ length: q.total }, () => "<i></i>").join("");
+  }
+  for (let c = 0; c < q.total; c++) {
+    const el = map.children[c];
+    if (q.owner[c] < 0) continue;
+    el.style.background = workerColor(q.owner[c], q.n);
+    el.style.opacity = q.done[c] ? "1" : ".4";
+  }
+  $("qlegend").innerHTML = q.counts.map((k, i) =>
+    `<span><b style="background:${workerColor(i, q.n)}"></b>T${i + 1}: ${k} chunks</span>`
+  ).join("");
+}
+
+/* ---------- Benchmark helpers ---------- */
+function sweetSpot(results) {
+  const minT = Math.min(...results.map((r) => r.time));
+  return results.find((r) => r.time <= minT * 1.05);
+}
+
+function drawBench(results) {
+  const max = Math.max(...results.map((r) => r.time));
+  const best = sweetSpot(results);
+  $("bench-chart").innerHTML = results.map((r) => {
+    const h = Math.max(6, (r.time / max) * 100);
+    return `<div class="bcol${r === best ? " best" : ""}">
+      <span class="bval">${fmt(r.time)}</span>
+      <div class="bwrap"><div class="bbar" style="height:${h}%"></div></div>
+      <span class="blab">${r.t} thread${r.t > 1 ? "s" : ""}</span>
+      <span class="bsp">${(results[0].time / r.time).toFixed(2)}x</span>
+    </div>`;
+  }).join("");
+}
+
+async function blobsEqual(a, b) {
+  if (a.size !== b.size) return false;
+  const x = new Uint8Array(await a.arrayBuffer());
+  const y = new Uint8Array(await b.arrayBuffer());
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+  return true;
+}
+
+/* ---------- UI ---------- */
+$("slow").disabled = true;
+$("demo").onchange = (e) => { $("url").disabled = e.target.checked; $("slow").disabled = !e.target.checked; };
+
+$("start").onclick = async () => {
+  showError("");
+  const demo = $("demo").checked;
+  const url = $("url").value.trim();
+  const n = Math.max(1, Math.min(16, parseInt($("threads").value, 10) || 4));
+  const slow = demo && $("slow").checked;
+  if (!demo && !/^https?:\/\//i.test(url)) return showError("Enter a valid http(s) URL.");
+
+  setBusy(true);
+  $("results").classList.add("hidden");
+  $("progress").classList.remove("hidden");
+  $("s-fill").style.width = "0%"; $("m-fill").style.width = "0%";
+  $("s-text").textContent = "waiting"; $("m-text").textContent = "waiting";
+  $("m-title").textContent = `Fixed split (${n} threads)`;
+  $("q-title").textContent = `Dynamic queue (${n} threads)`;
+  $("q-fill").style.width = "0%"; $("q-text").textContent = "waiting";
+  $("qmap").innerHTML = ""; $("qlegend").innerHTML = "";
+  $("parts").innerHTML = Array.from({ length: n }, (_, i) =>
+    `<div class="part"><small>Part ${i + 1}</small><div class="bar"><div class="fill green" id="p${i}"></div></div></div>`
+  ).join("");
+
+  try {
+    const size = demo ? DEMO_SIZE : await probe(url);
+
+    // 1) single thread (plain GET, one worker)
+    $("s-text").textContent = "downloading...";
+    const single = await runPhase({
+      url, size, n: 1, useRange: false, demo,
+      onProgress: (r) => {
+        const p = pct(r[0], size);
+        $("s-fill").style.width = p + "%";
+        $("s-text").textContent = p.toFixed(0) + "%";
+      },
+    });
+    $("s-text").textContent = "100% · " + fmt(single.time);
+
+    // 2) multithreaded
+    $("m-text").textContent = "downloading...";
+    const partSize = size / n;
+    const multi = await runPhase({
+      url, size, n, useRange: true, demo, slowFirst: slow,
+      onProgress: (r) => {
+        const total = r.reduce((a, b) => a + b, 0);
+        const p = pct(total, size);
+        $("m-fill").style.width = p + "%";
+        $("m-text").textContent = p.toFixed(0) + "%";
+        r.forEach((d, i) => { $("p" + i).style.width = pct(d, partSize) + "%"; });
+      },
+    });
+    $("m-text").textContent = "100% · " + fmt(multi.time);
+
+    // 3) dynamic queue
+    $("q-text").textContent = "downloading...";
+    const queue = await runQueue({ url, size, n, demo, slowFirst: slow, onProgress: showQueue });
+    $("q-text").textContent = "100% · " + fmt(queue.time);
+
+    // 4) verify and show results
+    const same = (await blobsEqual(single.blob, multi.blob)) && (await blobsEqual(single.blob, queue.blob));
+    finalBlob = multi.blob;
+    finalName = demo ? "demo_file.bin" : (decodeURIComponent(new URL(url).pathname.split("/").pop()) || "download.bin");
+
+    $("r-single").textContent = fmt(single.time);
+    $("r-multi").textContent = fmt(multi.time);
+    $("r-queue").textContent = fmt(queue.time);
+    $("r-speed").textContent = (single.time / Math.min(multi.time, queue.time)).toFixed(2) + "x";
+    $("r-msg").textContent = (same ? "All three downloads are identical. " : "Warning: the downloads differ! ") +
+      (queue.time < multi.time ? "The dynamic queue was faster than the fixed split." : "The fixed split was faster than the dynamic queue.");
+    $("results").classList.remove("hidden");
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    setBusy(false);
+  }
+};
+
+const BENCH_THREADS = [1, 2, 4, 8, 16];
+
+$("bench-run").onclick = async () => {
+  showError("");
+  const demo = $("demo").checked;
+  const url = $("url").value.trim();
+  if (!demo && !/^https?:\/\//i.test(url)) return showError("Enter a valid http(s) URL.");
+  const method = $("bench-method").value;
+  setBusy(true);
+  $("bench-out").classList.remove("hidden");
+  $("bench-chart").innerHTML = "";
+  $("bench-msg").textContent = "Preparing...";
+  try {
+    const size = demo ? DEMO_SIZE : await probe(url);
+    const results = [];
+    for (const t of BENCH_THREADS) {
+      $("bench-msg").textContent = `Testing ${t} thread${t > 1 ? "s" : ""} (${results.length + 1} of ${BENCH_THREADS.length})...`;
+      const r = method === "queue"
+        ? await runQueue({ url, size, n: t, demo, slowFirst: false, onProgress: () => {} })
+        : await runPhase({ url, size, n: t, useRange: t > 1, demo, slowFirst: false, onProgress: () => {} });
+      results.push({ t, time: r.time });
+      drawBench(results);
+    }
+    const best = sweetSpot(results);
+    let note = `Sweet spot: ${best.t} thread${best.t > 1 ? "s" : ""} (${fmt(best.time)}, ${(results[0].time / best.time).toFixed(2)}x faster than 1 thread).`;
+    if (best.t < BENCH_THREADS[BENCH_THREADS.length - 1]) {
+      note += " More threads gave less than 5% extra gain (diminishing returns).";
+    }
+    $("bench-msg").textContent = note;
+  } catch (err) {
+    $("bench-msg").textContent = "";
+    showError(err.message);
+  } finally {
+    setBusy(false);
+  }
+};
+
+$("save").onclick = () => {
+  if (!finalBlob) return;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(finalBlob);
+  a.download = finalName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+};
+
+</script>
+</body>
+</html>
